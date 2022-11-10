@@ -22,5 +22,4 @@ public enum CardType {
     private CardType(int number) {
         this.number = number;
     }
-
 }
