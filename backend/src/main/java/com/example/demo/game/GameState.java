@@ -20,6 +20,7 @@ public class GameState {
     private GameStage currentStage;
     private int currentRound;
     private CardSuit currentTrumpSuit;
+    private CardSuit currentDesiredSuit;
     private Player currentTurnPlayer;
     private final Stack<PlayerCardPair> playedCards;
     private final LinkedList<Player> players; // last player is dealer
@@ -35,6 +36,7 @@ public class GameState {
         this.currentStage = null;
         this.currentRound = 0;
         this.currentTrumpSuit = null;
+        this.currentDesiredSuit = null;
         this.currentTurnPlayer = null;
         this.playedCards = new Stack<>();
         this.players = new LinkedList<>();
@@ -44,6 +46,14 @@ public class GameState {
         this.trumpSuitChosen = false;
         this.cardPlayed = false;
         this.tricksPredicted = false;
+    }
+
+    public CardSuit getCurrentDesiredSuit() {
+        return currentDesiredSuit;
+    }
+
+    public void setCurrentDesiredSuit(CardSuit currentDesiredSuit) {
+        this.currentDesiredSuit = currentDesiredSuit;
     }
 
     public GameStage getCurrentGameStage() {

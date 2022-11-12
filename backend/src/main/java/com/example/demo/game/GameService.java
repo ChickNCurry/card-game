@@ -113,6 +113,7 @@ public class GameService {
         state.resetPlayedCards();
 
         for (int i = 0; i < state.getCurrentRound(); i++) {
+            state.setCurrentDesiredSuit(null);
             for(Player player: state.getPlayers()) {
                 // wait until card is played by turn player
                 state.setCurrentTurnPlayer(player);
@@ -150,17 +151,91 @@ public class GameService {
     public synchronized void playCard(String playerId, Card card) {
         if(state.getCurrentGameStage() == GameStage.PLAYING
                 && playerId.equals(state.getCurrentTurnPlayer().getId())) {
-            if(state.getCurrentTurnPlayer().hasInHand(card)) {
+
+            if(state.getCurrentTurnPlayer().hasInHand(card) && isCardPlayable(card)) {
+
                 state.playCard(card);
+
+                // if desired suit not yet set and current card is number card
+                if(state.getCurrentDesiredSuit() != null && card.isNumberCard()) {
+
+                    // if current card is first then set desired suit
+                    if(state.getPlayedCards().empty()) {
+                        state.setCurrentDesiredSuit(card.suit());
+                    }
+                    //if jester was first and wizard was not second
+                    if(state.getPlayedCards().size() > 1
+                            && state.getPlayedCards().get(0).card().isJester()
+                            && !state.getPlayedCards().get(1).card().isWizard()) {
+                        state.setCurrentDesiredSuit(card.suit());
+                    }
+                }
+
                 state.setCardPlayed(true);
                 notifyAll();
             }
         }
     }
 
+    public boolean isCardPlayable(Card card) {
+        if(card.type() == CardType.JESTER || card.type() == CardType.WIZARD) return true;
+        else if(state.getCurrentDesiredSuit() == null) return true;
+        else if(state.getCurrentDesiredSuit() == card.suit()) return true;
+        else {
+            for(Card c: state.getCurrentTurnPlayer().getHand()) {
+                if (c.suit() == state.getCurrentDesiredSuit()) return false;
+            }
+        }
+        return true;
+    }
+
     private Player evaluateTrickWinner() {
-        // TODO
-        return state.getPlayers().peek();
+        Stack<PlayerCardPair> playedCards = state.getPlayedCards();
+        PlayerCardPair trickWinner = null;
+
+        while(!playedCards.isEmpty()) {
+            PlayerCardPair top = playedCards.pop();
+
+            if(top.card().isWizard()) {
+                trickWinner = top;
+            }
+            else if (trickWinner == null) {
+                trickWinner = top;
+            }
+            else if(top.card().isNumberCard()) {
+                if(top.card().suit() == state.getCurrentTrumpSuit()) {
+                    if(trickWinner.card().suit() == state.getCurrentTrumpSuit()) {
+                        if(top.card().getNumber() > trickWinner.card().getNumber()) {
+                            trickWinner = top;
+                        }
+                    } else {
+                        trickWinner = top;
+                    }
+                }
+                else if (top.card().suit() == state.getCurrentDesiredSuit()) {
+                    if(trickWinner.card().suit() != state.getCurrentTrumpSuit()) {
+                        if(trickWinner.card().suit() == state.getCurrentDesiredSuit()) {
+                            if(top.card().getNumber() > trickWinner.card().getNumber()) {
+                                trickWinner = top;
+                            }
+                        } else {
+                            trickWinner = top;
+                        }
+                    }
+                }
+                else if (trickWinner.card().suit() != state.getCurrentTrumpSuit()
+                        && trickWinner.card().suit() != state.getCurrentDesiredSuit()
+                        && top.card().getNumber() > trickWinner.card().getNumber()) {
+                    trickWinner = top;
+                }
+            }
+        }
+
+        if(trickWinner == null) {
+            trickWinner = state.getPlayedCards().firstElement();
+        }
+
+        return trickWinner.player();
     }
 
     public List<Player> getWinners() {
