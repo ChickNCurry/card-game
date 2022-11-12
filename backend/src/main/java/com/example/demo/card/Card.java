@@ -1,21 +1,15 @@
 package com.example.demo.card;
 
-public class Card {
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-    private CardType type;
-    private CardSuit suit;
+public record Card(CardType type, CardSuit suit) {
 
-    public Card(CardType type, CardSuit color) {
+    @JsonCreator
+    public Card(@JsonProperty("cardType") CardType type,
+                @JsonProperty("cardSuit") CardSuit suit) {
         this.type = type;
-        this.suit = color;
-    }
-
-    public CardType getType() {
-        return type;
-    }
-
-    public CardSuit getSuit() {
-        return suit;
+        this.suit = suit;
     }
 
 }

@@ -1,10 +1,10 @@
 package com.example.demo.game;
 
 import com.example.demo.card.Card;
-import com.example.demo.card.CardDeck;
 import com.example.demo.card.CardSuit;
 import com.example.demo.card.CardType;
 import com.example.demo.player.Player;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -12,149 +12,159 @@ import java.util.*;
 @Service
 public class GameService {
 
-    private final int minPlayerCount = 3;
-    private final int maxPlayerCount = 6;
+    private final GameState state;
+    private final GameScore score;
 
-    class PlayerCardPair {
-        private Player player;
-        private Card card;
-
-        public PlayerCardPair(Player player, Card card) {
-            this.player = player;
-            this.card = card;
-        }
-
-        public Player getPlayer() {
-            return player;
-        }
-
-        public Card getCard() {
-            return card;
-        }
+    @Autowired
+    public GameService(GameState state, GameScore score) {
+        this.state = state;
+        this.score = score;
     }
 
-    // last player is dealer
-    private LinkedList<Player> players;
-    private Player turnPlayer;
-    private Player winner;
-    private int currentRound;
-    private CardSuit currentTrumpSuit;
-    private GameScore score;
-    private CardDeck deck;
-    private Stack<PlayerCardPair> playedCards;
-    private boolean isStartable;
-
-    public GameService() {
-        this.deck = new CardDeck();
-        this.players = new LinkedList<>();
-        this.score = new GameScore(players);
-        this.currentRound = 0;
-        this.playedCards = new Stack<>();
-        this.currentTrumpSuit = null;
-        this.winner = null;
-        this.isStartable = false;
-    }
-
-    public List<Player> getPlayers() {
-        return players;
+    public void hostGame(Player player) {
+        state.setHost(player);
     }
 
     public void addPlayer(Player player) {
-        players.add(player);
-        isStartable = minPlayerCount <= players.size() && players.size() <= maxPlayerCount;
+        state.addPlayer(player);
+        score.addPlayer(player);
     }
 
     public void removePlayer(String playerId) {
-        players.removeIf(player -> player.getId().equals(playerId));
-        isStartable = minPlayerCount <= players.size() && players.size() <= maxPlayerCount;
+        state.removePlayer(playerId);
+        score.removePlayer(playerId);
+    }
+
+    public List<Player> getPlayers() {
+        return state.getPlayers();
     }
 
     public Player getTurnPlayer() {
-        return turnPlayer;
+        return state.getCurrentTurnPlayer();
     }
 
-    public void runGame() {
-        if(!isStartable) {
-            System.out.println("invalid player count: " + players.size());
+    public synchronized void runGame(String playerId) throws InterruptedException {
+        if(!playerId.equals(state.getHost().getId())) return;
+
+        if(!state.isReady()) {
+            System.out.println("invalid player count: " + state.getPlayerCount());
             return;
         }
 
-        int rounds = deck.getDeckSize() / players.size();
+        int rounds = state.getDeck().getDeckSize() / state.getPlayerCount();
         for(int i = 0; i < rounds; i++) {
-            currentRound = i;
-            rotateDealer();
+            state.setCurrentRound(i + 1);
             runDealingStage();
             runBiddingStage();
             runPlayingStage();
+            state.rotateDealer();
         }
-        winner = score.determineWinner(players);
+
+        state.setWinners(score.determineWinners(state.getPlayers()));
     }
 
-    private void rotateDealer() {
-        Player dealer = players.removeLast();
-        players.addFirst(dealer);
-    }
-
-    private void runDealingStage() {
-        deck.resetDeck();
+    private synchronized void runDealingStage() throws InterruptedException {
+        state.setCurrentGameStage(GameStage.DEALING);
+        state.resetDeck();
 
         // distribute cards
-        for(int i = 0; i < currentRound; i++) {
-            for(Player player : players) {
-                player.addToHand(deck.popDeck());
+        for(int i = 0; i < state.getCurrentRound(); i++) {
+            for(Player player : state.getPlayers()) {
+                player.addToHand(state.popDeck());
             }
         }
 
         // set trump suit
-        if(!deck.isDeckEmpty()) {
-            Card card = deck.popDeck();
-            if(card.getType() == CardType.JESTER) {
-                this.currentTrumpSuit = null;
-            } else if (card.getType() == CardType.WIZARD) {
-                this.currentTrumpSuit = players.getLast().pickTrumpSuit();
+        if(!state.isDeckEmpty()) {
+            Card card = state.popDeck();
+            if(card.type() == CardType.JESTER) {
+                state.setCurrentTrumpSuit(null);
+            } else if (card.type() == CardType.WIZARD) {
+                // wait until trump suit is chosen by dealer
+                state.setCurrentTurnPlayer(state.getPlayers().getLast());
+                state.setTrumpSuitChosen(false);
+                while (!state.isTrumpSuitChosen()) {
+                    wait();
+                }
+                state.setCurrentTurnPlayer(null);
             }
         } else {
-            this.currentTrumpSuit = null;
+            state.setCurrentTrumpSuit(null);
         }
     }
 
-    private void runBiddingStage() {
+    private synchronized void runBiddingStage() throws InterruptedException {
+        state.setCurrentGameStage(GameStage.BIDDING);
         score.resetTricks();
 
-        for(Player player: players) {
-            turnPlayer = player;
-            int trickCount = player.stateTrickCount();
-            score.recordTrickPrediction(player, trickCount);
+        for(Player player: state.getPlayers()) {
+            // wait until trick count is chosen by turn player
+            state.setCurrentTurnPlayer(player);
+            state.setTricksPredicted(false);
+            while(!state.isTricksPredicted()) {
+                wait();
+            }
+            state.setCurrentTurnPlayer(null);
         }
     }
 
-    private void runPlayingStage() {
-        playedCards.clear();
+    private synchronized void runPlayingStage() throws InterruptedException {
+        state.setCurrentGameStage(GameStage.PLAYING);
+        state.resetPlayedCards();
 
-        for (int i = 0; i < currentRound; i++) {
-            for(Player player: players) {
-                turnPlayer = player;
-                Card playedCard = player.playCard();
-                playedCards.push(new PlayerCardPair(player, playedCard));
+        for (int i = 0; i < state.getCurrentRound(); i++) {
+            for(Player player: state.getPlayers()) {
+                // wait until card is played by turn player
+                state.setCurrentTurnPlayer(player);
+                state.setCardPlayed(false);
+                while(!state.isCardPlayed()) {
+                    wait();
+                }
+                state.setCurrentTurnPlayer(null);
             }
             Player winner = evaluateTrickWinner();
-            score.addTrick(winner);
+            score.addToTrickCount(winner);
         }
 
-        score.recordScores(players);
+        score.recordScores(state.getPlayers());
+    }
+
+    public synchronized void chooseTrumpSuit(String playerId, CardSuit suit) {
+        if(state.getCurrentGameStage() == GameStage.DEALING
+                && playerId.equals(state.getCurrentTurnPlayer().getId())) {
+            state.setCurrentTrumpSuit(suit);
+            state.setTrumpSuitChosen(true);
+            notifyAll();
+        }
+    }
+
+    public synchronized void predictTricks(String playerId, int tricks) {
+        if(state.getCurrentGameStage() == GameStage.BIDDING
+                && playerId.equals(state.getCurrentTurnPlayer().getId())) {
+            score.recordTrickPrediction(state.getCurrentTurnPlayer(), tricks);
+            state.setTricksPredicted(true);
+            notifyAll();
+        }
+    }
+
+    public synchronized void playCard(String playerId, Card card) {
+        if(state.getCurrentGameStage() == GameStage.PLAYING
+                && playerId.equals(state.getCurrentTurnPlayer().getId())) {
+            if(state.getCurrentTurnPlayer().hasInHand(card)) {
+                state.playCard(card);
+                state.setCardPlayed(true);
+                notifyAll();
+            }
+        }
     }
 
     private Player evaluateTrickWinner() {
         // TODO
-        return playedCards.peek().getPlayer();
+        return state.getPlayers().peek();
     }
 
-    public void pauseGame() {
-        // TODO
-    }
-
-    public Player getWinner() {
-        return winner;
+    public List<Player> getWinners() {
+        return state.getWinners();
     }
 
 }

@@ -17,9 +17,14 @@ public enum CardType {
     THIRTEEN(13),
     WIZARD(14);
 
-    public final int number;
+    private final int number;
 
-    private CardType(int number) {
+    CardType(int number) {
         this.number = number;
     }
+
+    public int getNumber() {
+        return number;
+    }
+
 }
