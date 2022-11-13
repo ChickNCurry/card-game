@@ -1,0 +1,30 @@
+.mat-card {
+  margin: 10px;
+  width: 80%;
+}
+
+.wrapper {
+  display: flex;
+  background-color: gray;
+  height: 100%;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 30%;
+}
+
+.cards {
+  width: 70%;
+}
+
+.info {
+  height: 20%;
+}
+
+.score {
+  height: 80%;
+}
